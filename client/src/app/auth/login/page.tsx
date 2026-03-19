@@ -9,7 +9,7 @@ import BrutalistButton from "@/components/ui/BrutalistButton";
 import GridBackground from "@/components/ui/GridBackground";
 import AuthInput from "@/components/auth/AuthInput";
 import { Mail, Lock, LogIn } from "lucide-react";
-import { useAuthStore } from "@/lib/auth.store";
+import { useAuthStore } from "@/stores/useAuthStore";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -19,10 +19,8 @@ export default function LoginPage() {
         loading,
         error,
         clearError,
-        token,
+        isAuthenticated, // ✅ use isAuthenticated directly, not token
     } = useAuthStore();
-
-    const isAuthenticated = !!token;
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -35,26 +33,44 @@ export default function LoginPage() {
         }
     }, [isAuthenticated, router]);
 
+    const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setEmail(e.target.value);
+        if (errors.email) setErrors((prev) => ({ ...prev, email: "" }));
+        if (error) clearError(); // ✅ dismiss store error on input change
+    };
+
+    const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setPassword(e.target.value);
+        if (errors.password) setErrors((prev) => ({ ...prev, password: "" }));
+        if (error) clearError(); // ✅ dismiss store error on input change
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
         const newErrors: { [key: string]: string } = {};
 
-        if (!email) newErrors.email = "Email is required";
+        if (!email)
+            newErrors.email = "Email is required";
         else if (!/\S+@\S+\.\S+/.test(email))
             newErrors.email = "Please enter a valid email";
 
-        if (!password) newErrors.password = "Password is required";
+        if (!password)
+            newErrors.password = "Password is required";
         else if (password.length < 6)
             newErrors.password = "Password must be at least 6 characters";
 
         setErrors(newErrors);
 
-        if (Object.keys(newErrors).length === 0) {
-            const res = await login(
-                email,
-                password,
-            );
+        if (Object.keys(newErrors).length > 0) return; // ✅ early return
+
+        try {
+            // ✅ Pass object { email, password } matching store signature
+            await login({ email, password });
+            // Redirect handled by useEffect watching isAuthenticated
+        } catch (err) {
+            // Error is set in the store; no extra handling needed here
+            console.error("Login failed:", err);
         }
     };
 
@@ -67,7 +83,7 @@ export default function LoginPage() {
                 lineOpacity={0.06}
                 className="relative min-h-screen flex flex-col items-center justify-center px-4 overflow-hidden"
             >
-                {/* Glow */}
+                {/* Ambient glow */}
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-lime/5 rounded-full blur-3xl" />
                 </div>
@@ -91,7 +107,7 @@ export default function LoginPage() {
 
                     {/* Card */}
                     <div className="bg-card border-3 border-lime shadow-brutal p-8 mb-6">
-                        {/* Error */}
+                        {/* Global store error */}
                         {error && (
                             <motion.div
                                 initial={{ opacity: 0, y: -10 }}
@@ -102,23 +118,20 @@ export default function LoginPage() {
                                 <button
                                     onClick={clearError}
                                     className="text-lg hover:text-red-300"
+                                    aria-label="Dismiss error"
                                 >
                                     ×
                                 </button>
                             </motion.div>
                         )}
 
-                        <form onSubmit={handleSubmit} className="space-y-6">
+                        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
                             <AuthInput
                                 label="Email"
                                 type="email"
                                 placeholder="your@email.com"
                                 value={email}
-                                onChange={(e) => {
-                                    setEmail(e.target.value);
-                                    if (errors.email)
-                                        setErrors({ ...errors, email: "" });
-                                }}
+                                onChange={handleEmailChange}
                                 error={errors.email}
                                 icon={<Mail className="w-5 h-5" />}
                             />
@@ -128,11 +141,7 @@ export default function LoginPage() {
                                 type="password"
                                 placeholder="Enter your password"
                                 value={password}
-                                onChange={(e) => {
-                                    setPassword(e.target.value);
-                                    if (errors.password)
-                                        setErrors({ ...errors, password: "" });
-                                }}
+                                onChange={handlePasswordChange}
                                 error={errors.password}
                                 icon={<Lock className="w-5 h-5" />}
                             />

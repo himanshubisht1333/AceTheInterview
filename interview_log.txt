@@ -210,3 +210,35 @@ A: mera naam Deepak hai main software engineering isliye karna chahta hun Kyunki
 Q: 
 A: hello I am Deepak
 
+[Q1]
+Q: 
+A: hello I am the Pakistan because I love to make clean  clean designs
+
+[Q1]
+Q: 
+A: when I was in class 5th I love to make drawing from that time I like to make interest in content development
+
+[Q1]
+Q: 
+A: hello I am currently pursuing BCA from gurugram University and I am interested in front and development because I love to make designs
+
+[Q1]
+Q: 
+A: I am very newly to this frameworks and in last my project I have use the react GS for front end
+
+[Q1]
+Q: 
+A: hello I am Deepak and kindly person BCA  I want to pursue career in front and development because I make a very clean and responsive responsive front end
+
+[Q1]
+Q: 
+A: I use this technology for building front and I have use this  in
+
+[Q1]
+Q: 
+A: hello I am Deepak currently person BCA from gurugram University I want to pursue or career in front and development because I love to make responsive and simple designs
+
+[Q1]
+Q: 
+A: next question
+

@@ -1,11 +1,11 @@
 import { create } from "zustand";
-import axiosInstance from "@/config/axios";
+import { api } from "../config/axios";
 
 interface AuthState {
   user: any;
-  token: string | null;
   loading: boolean;
   error: string | null;
+  isAuthenticated: boolean;
 
   register: (data: {
     name: string;
@@ -25,88 +25,95 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  token:
-    typeof window !== "undefined"
-      ? localStorage.getItem("auth-store")
-      : null,
   loading: false,
   error: null,
+  isAuthenticated: false,
 
-  // ✅ REGISTER (FIXED)
+  // ✅ REGISTER
   register: async ({ name, email, password }) => {
     try {
       set({ loading: true, error: null });
-
-      const res = await axiosInstance.post("/api/auth/register", {
+      console.log(process.env.NEXT_PUBLIC_API_URL); // Debug log to check API URL
+      const res = await api.post("/api/auth/register", {
         name,
         email,
         password,
       });
 
-      localStorage.setItem("token", res.data.token);
-
       set({
         user: res.data.user,
-        token: res.data.token,
+        isAuthenticated: true,
         loading: false,
       });
 
       return res.data;
     } catch (err: any) {
+      const errorMessage = err.response?.data?.message || "Registration failed";
       set({
-        error: err.response?.data?.message || "Register failed",
+        error: errorMessage,
         loading: false,
       });
+      throw err;
     }
   },
 
-  // LOGIN
+  // ✅ LOGIN
   login: async ({ email, password }) => {
     try {
       set({ loading: true, error: null });
 
-      const res = await axiosInstance.post("/api/auth/login", {
+      const res = await api.post("/api/auth/login", {
         email,
         password,
       });
 
-      localStorage.setItem("token", res.data.token);
-
       set({
         user: res.data.user,
-        token: res.data.token,
+        isAuthenticated: true,
         loading: false,
       });
 
       return res.data;
     } catch (err: any) {
+      const errorMessage = err.response?.data?.message || "Login failed";
       set({
-        error: err.response?.data?.message || "Login failed",
+        error: errorMessage,
         loading: false,
       });
+      throw err;
     }
   },
 
-  // GET USER
+  // ✅ GET USER
   getUser: async () => {
     try {
-      const res = await axiosInstance.get("/api/auth/getUser");
+      set({ loading: true });
+      const res = await api.get("/api/auth/user");
 
       set({
         user: res.data.user,
+        isAuthenticated: true,
+        loading: false,
       });
-    } catch {
+    } catch (err: any) {
       set({
         user: null,
-        token: null,
+        isAuthenticated: false,
+        loading: false,
+        error: err.response?.data?.message || "Failed to fetch user",
       });
-      localStorage.removeItem("auth-store");
     }
   },
 
-  logout: () => {
-    localStorage.removeItem("auth-store");
-    set({ user: null, token: null });
+  // ✅ LOGOUT
+  logout: async () => {
+    try {
+      await api.post("/api/auth/logout");
+    } catch (err) {
+      console.error("Logout error:", err);
+    } finally {
+      set({ user: null, isAuthenticated: false, error: null });
+    }
   },
 
   clearError: () => set({ error: null }),

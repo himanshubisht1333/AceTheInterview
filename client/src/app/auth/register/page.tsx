@@ -9,7 +9,7 @@ import BrutalistButton from "@/components/ui/BrutalistButton";
 import GridBackground from "@/components/ui/GridBackground";
 import AuthInput from "@/components/auth/AuthInput";
 import { Mail, Lock, User, UserPlus } from "lucide-react";
-import { useAuthStore } from "@/lib/auth.store";
+import { useAuthStore } from "@/stores/useAuthStore";
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -19,13 +19,11 @@ export default function RegisterPage() {
         loading,
         error,
         clearError,
-        token,
+        isAuthenticated, // ✅ use isAuthenticated, not token
     } = useAuthStore();
 
-    const isAuthenticated = !!token;
-
     const [formData, setFormData] = useState({
-        fullName: "",
+        name: "",          // ✅ renamed from fullName → name (matches store)
         email: "",
         password: "",
         confirmPassword: "",
@@ -33,7 +31,7 @@ export default function RegisterPage() {
 
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-    // Redirect if logged in
+    // Redirect if already authenticated
     useEffect(() => {
         if (isAuthenticated) {
             router.push("/setup");
@@ -41,11 +39,12 @@ export default function RegisterPage() {
     }, [isAuthenticated, router]);
 
     const handleChange = (field: string, value: string) => {
-        setFormData({ ...formData, [field]: value });
-
+        setFormData((prev) => ({ ...prev, [field]: value }));
         if (errors[field]) {
-            setErrors({ ...errors, [field]: "" });
+            setErrors((prev) => ({ ...prev, [field]: "" }));
         }
+        // Also clear global store error when user starts typing
+        if (error) clearError();
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -53,14 +52,17 @@ export default function RegisterPage() {
 
         const newErrors: { [key: string]: string } = {};
 
-        // Validation
-        if (!formData.fullName) newErrors.fullName = "Full name is required";
+        // Client-side validation
+        if (!formData.name.trim())
+            newErrors.name = "Full name is required";
 
-        if (!formData.email) newErrors.email = "Email is required";
+        if (!formData.email)
+            newErrors.email = "Email is required";
         else if (!/\S+@\S+\.\S+/.test(formData.email))
             newErrors.email = "Please enter a valid email";
 
-        if (!formData.password) newErrors.password = "Password is required";
+        if (!formData.password)
+            newErrors.password = "Password is required";
         else if (formData.password.length < 6)
             newErrors.password = "Password must be at least 6 characters";
 
@@ -71,20 +73,19 @@ export default function RegisterPage() {
 
         setErrors(newErrors);
 
-        // If no errors → call API
-        if (Object.keys(newErrors).length === 0) {
-            try {
-                await register(
-                    formData.fullName,
-                    formData.email,
-                    formData.password
-                );
+        if (Object.keys(newErrors).length > 0) return;
 
-                // Registration successful, redirection will be handled by useEffect
-            } catch (err) {
-                // Error is handled by the store
-                console.error("Registration failed:", err);
-            }
+        try {
+            // ✅ Pass object { name, email, password } matching store signature
+            await register({
+                name: formData.name.trim(),
+                email: formData.email,
+                password: formData.password,
+            });
+            // Redirect handled by useEffect watching isAuthenticated
+        } catch (err) {
+            // Error is set in the store; no extra handling needed here
+            console.error("Registration failed:", err);
         }
     };
 
@@ -97,7 +98,7 @@ export default function RegisterPage() {
                 lineOpacity={0.06}
                 className="relative min-h-screen flex flex-col items-center justify-center px-4 overflow-hidden py-8"
             >
-                {/* Glow */}
+                {/* Ambient glow */}
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-lime/5 rounded-full blur-3xl" />
                 </div>
@@ -121,7 +122,7 @@ export default function RegisterPage() {
 
                     {/* Card */}
                     <div className="bg-card border-3 border-lime shadow-brutal p-8 mb-6">
-                        {/* Error */}
+                        {/* Global store error */}
                         {error && (
                             <motion.div
                                 initial={{ opacity: 0, y: -10 }}
@@ -132,22 +133,22 @@ export default function RegisterPage() {
                                 <button
                                     onClick={clearError}
                                     className="text-lg hover:text-red-300"
+                                    aria-label="Dismiss error"
                                 >
                                     ×
                                 </button>
                             </motion.div>
                         )}
 
-                        <form onSubmit={handleSubmit} className="space-y-5">
+                        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+                            {/* ✅ field key is now "name" */}
                             <AuthInput
                                 label="Full Name"
                                 type="text"
                                 placeholder="Your full name"
-                                value={formData.fullName}
-                                onChange={(e) =>
-                                    handleChange("fullName", e.target.value)
-                                }
-                                error={errors.fullName}
+                                value={formData.name}
+                                onChange={(e) => handleChange("name", e.target.value)}
+                                error={errors.name}
                                 icon={<User className="w-5 h-5" />}
                             />
 
@@ -156,9 +157,7 @@ export default function RegisterPage() {
                                 type="email"
                                 placeholder="your@email.com"
                                 value={formData.email}
-                                onChange={(e) =>
-                                    handleChange("email", e.target.value)
-                                }
+                                onChange={(e) => handleChange("email", e.target.value)}
                                 error={errors.email}
                                 icon={<Mail className="w-5 h-5" />}
                             />
@@ -166,11 +165,9 @@ export default function RegisterPage() {
                             <AuthInput
                                 label="Password"
                                 type="password"
-                                placeholder="Create a password"
+                                placeholder="Create a password (min. 6 chars)"
                                 value={formData.password}
-                                onChange={(e) =>
-                                    handleChange("password", e.target.value)
-                                }
+                                onChange={(e) => handleChange("password", e.target.value)}
                                 error={errors.password}
                                 icon={<Lock className="w-5 h-5" />}
                             />

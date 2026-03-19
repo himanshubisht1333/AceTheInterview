@@ -3,12 +3,7 @@ import google.generativeai as genai
 import json
 import os
 import dotenv
-import cloudinary
-import cloudinary.uploader
-from pdf2image import convert_from_bytes
-import io
 import requests
-from gradio_client import Client, handle_file
 from flask_cors import CORS
 
 dotenv.load_dotenv()
@@ -24,16 +19,6 @@ model = genai.GenerativeModel("gemini-2.5-flash")
 # ── Gemini REST (for CV parsing + question generation) ───────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-
-# ── Cloudinary ────────────────────────────────────────────────────────────────
-cloudinary.config(
-    cloud_name=os.getenv("CLOUD_NAME"),
-    api_key=os.getenv("API_KEY"),
-    api_secret=os.getenv("API_SECRET"),
-)
-
-# ── Gradio OCR model ──────────────────────────────────────────────────────────
-gradio_client = Client("CohereLabs/command-a-vision")
 
 # ── Shared interview store (accessible by all clients — browser + Postman) ───
 # Questions written here by /cv or /upload-questions are picked up by the
@@ -148,9 +133,9 @@ def home():
 #   prompt      → any extra context / FAQ hints
 #
 # What it does:
-#   1. Uploads CV to Cloudinary
-#   2. Sends to Gradio OCR to extract resume text
-#   3. Sends resume text + role to Gemini to generate interview questions
+#   1. Sends CV to http://localhost:8000/api/resume/parse for parsing
+#   2. Receives parsed profile data (education, experience, skills, resumeText)
+#   3. Sends resumeText directly to Gemini for question generation
 #   4. Saves generated questions into interview_store (browser auto-picks up)
 #
 # Returns: { "status": "ok", "question_count": 8 }
@@ -168,53 +153,32 @@ def cv():
     if not frontend_prompt:
         return jsonify({"error": "No prompt provided"}), 400
 
-    uploaded_urls = []
-
-    # Step 1: Upload CV to Cloudinary
+    # Step 1: Send file to external resume parsing API
     try:
-        if file.filename.lower().endswith(".pdf"):
-            images = convert_from_bytes(file.read(), dpi=300)
-            for image in images:
-                img_byte_arr = io.BytesIO()
-                image.save(img_byte_arr, format="JPEG")
-                img_byte_arr.seek(0)
-                result = cloudinary.uploader.upload(
-                    img_byte_arr, resource_type="image", folder="cv_uploads"
-                )
-                uploaded_urls.append(result["secure_url"])
-        else:
-            img_byte_arr = io.BytesIO()
-            file.save(img_byte_arr)
-            img_byte_arr.seek(0)
-            result = cloudinary.uploader.upload(
-                img_byte_arr, resource_type="image", folder="cv_uploads"
-            )
-            uploaded_urls.append(result["secure_url"])
-    except Exception as e:
-        return jsonify({"error": f"File upload failed: {str(e)}"}), 500
-
-    # Step 2: OCR the CV via Gradio
-    try:
-        ocr_result = gradio_client.predict(
-            message={
-                "text": """
-                You are an expert resume parser. Do not include any explanations, Markdown formatting,
-                backticks or /n /u for new line and underline. Return the raw text only in clean and
-                organised way. Extract: Name,district,state, career objective, skills, experience, education,
-                certifications, projects, achievements, and any other information.
-
-                
-
-                """,
-                "files": [handle_file(uploaded_urls[0])],
-            },
-            api_name="/chat",
+        files = {"file": (file.filename, file.stream, file.content_type)}
+        parse_response = requests.post(
+            os.getenv("RESUME_PARSING_API_URL", "http://localhost:8000/api/resume/parse"),
+            files=files
         )
-        print("OCR result:", ocr_result)
+        
+        if parse_response.status_code != 200:
+            return jsonify({"error": f"Resume parsing failed: {parse_response.text}"}), 400
+        
+        parse_data = parse_response.json()
+        profile_data = parse_data.get("data", {})
+        resume_text = profile_data.get("resumeText", "")
+        
+        if not resume_text:
+            return jsonify({"error": "No resume text extracted from parsing API"}), 400
+            
+        print(f"✓ Resume parsed successfully for: {profile_data.get('name', 'Unknown')}")
+        
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Failed to connect to parsing service: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": f"OCR failed: {str(e)}"}), 500
+        return jsonify({"error": f"Error parsing resume: {str(e)}"}), 500
 
-    # Step 3: Generate interview questions via Gemini REST
+    # Step 2: Generate interview questions via Gemini REST using resumeText
     try:
         prompt = f"""
 You are an experienced recruiter. Generate interview questions based on the candidate's resume and target role.
@@ -232,7 +196,7 @@ Target Role:
 {role}
 
 Candidate Resume:
-{ocr_result}
+{resume_text}
         """
         gemini_response = call_gemini_rest(prompt)
         raw_text = gemini_response['candidates'][0]['content']['parts'][0]['text']
@@ -245,7 +209,7 @@ Candidate Resume:
         if not questions_content:
             return jsonify({"error": "Gemini returned no questions"}), 500
 
-        # Step 4: Store in interview_store — browser will auto-detect and start
+        # Step 3: Store in interview_store — browser will auto-detect and start
         interview_store["questions_content"] = questions_content
         interview_store["questions_for_gemini"] = questions_content  # preserved for Gemini
 
