@@ -39,7 +39,7 @@ export default function Home() {
 
         <div className="relative z-10 max-w-5xl mx-auto text-center">
           {/* Badge */}
-          <motion.div
+          {/* <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
@@ -49,7 +49,7 @@ export default function Home() {
             <span className="text-lime font-grotesk font-bold text-sm uppercase tracking-widest">
               Powered by Claude AI
             </span>
-          </motion.div>
+          </motion.div> */}
 
           {/* Headline */}
           <motion.h1

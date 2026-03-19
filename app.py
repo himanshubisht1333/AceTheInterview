@@ -200,8 +200,11 @@ def cv():
                 "text": """
                 You are an expert resume parser. Do not include any explanations, Markdown formatting,
                 backticks or /n /u for new line and underline. Return the raw text only in clean and
-                organised way. Extract: Name, career objective, skills, experience, education,
+                organised way. Extract: Name,district,state, career objective, skills, experience, education,
                 certifications, projects, achievements, and any other information.
+
+                
+
                 """,
                 "files": [handle_file(uploaded_urls[0])],
             },
@@ -448,6 +451,7 @@ Rules:
         response = model.generate_content(prompt)
         raw = response.text.strip().replace("```json", "").replace("```", "").strip()
         evaluation = json.loads(raw)
+        print("Evaluation result:", evaluation)
 
         # Store evaluation so frontend can fetch it at /feedback-data
         interview_store["evaluation"] = evaluation

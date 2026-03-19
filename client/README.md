@@ -1,4 +1,4 @@
-# InterviewIQ 🧠⚡
+# AceTheInterview 🧠⚡
 
 <div align="center">
   <img src="https://img.shields.io/badge/Powered_by-Claude_AI-C8F135?style=for-the-badge&logo=anthropic&logoColor=0F0F0F" alt="Powered by Claude AI" />
@@ -9,7 +9,7 @@
 
 <br />
 
-**InterviewIQ** is an end-to-end, AI-powered mock interview platform that autonomously conducts personalized interviews tailored exactly to your resume, target role, and experience level. Rather than serving scripted Q&A, InterviewIQ dynamically adjusts its questioning based on your live responses, simulating the pressure and nuance of a real tech interview.
+**AceTheInterview** is an end-to-end, AI-powered mock interview platform that autonomously conducts personalized interviews tailored exactly to your resume, target role, and experience level. Rather than serving scripted Q&A, AceTheInterview dynamically adjusts its questioning based on your live responses, simulating the pressure and nuance of a real tech interview.
 
 Built with a striking **Neo-Brutalist** design system (inspired by modern developer tools), it aims to make interview preparation engaging, rigorous, and highly actionable.
 
@@ -62,8 +62,8 @@ Make sure you have Node.js (v18+) and npm/pnpm installed.
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/Mr-spiky/InterviewIQ.git
-   cd InterviewIQ
+   git clone https://github.com/Mr-spiky/AceTheInterview.git
+   cd AceTheInterview
    ```
 
 2. **Install dependencies:**
@@ -83,7 +83,7 @@ Make sure you have Node.js (v18+) and npm/pnpm installed.
 
 ## 📁 Project Structure
 
-InterviewIQ is architected around a highly modular component structure.
+AceTheInterview is architected around a highly modular component structure.
 
 ```
 src/

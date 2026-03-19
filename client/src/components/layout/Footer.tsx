@@ -46,7 +46,7 @@ export default function Footer() {
                                 <Brain className="w-5 h-5 text-dark" />
                             </div>
                             <span className="font-grotesk font-bold text-xl text-white">
-                                Interview<span className="text-lime">IQ</span>
+                                AceThe<span className="text-lime">Interview</span>
                             </span>
                         </Link>
                         <p className="text-white/60 text-sm leading-relaxed max-w-xs">
@@ -86,7 +86,7 @@ export default function Footer() {
 
                 <div className="border-t-3 border-dark-200 mt-12 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
                     <p className="text-white/40 text-sm font-grotesk">
-                        © 2026 InterviewIQ by TRAE. All rights reserved.
+                        © 2026 AceTheInterview. All rights reserved.
                     </p>
                     <div className="brutal-tag">
                         Built for Hackathon 🚀

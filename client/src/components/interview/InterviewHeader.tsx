@@ -37,7 +37,7 @@ export default function InterviewHeader({
                     <Brain className="w-4 h-4 text-dark" />
                 </div>
                 <div>
-                    <div className="font-grotesk font-black text-white text-sm">InterviewIQ — LIVE SESSION</div>
+                    <div className="font-grotesk font-black text-white text-sm">AceTheInterview — LIVE SESSION</div>
                     <div className="text-white/40 text-xs">{role} @ {company}</div>
                 </div>
             </div>

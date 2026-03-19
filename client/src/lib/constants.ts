@@ -155,7 +155,7 @@ export interface Testimonial {
 
 export const testimonials: Testimonial[] = [
     {
-        quote: "InterviewIQ helped me land a role at a FAANG company. The AI was brutally honest and exactly what I needed.",
+        quote: "AceTheInterview helped me land a role at a FAANG company. The AI was brutally honest and exactly what I needed.",
         name: "Arjun Sharma",
         role: "SWE at Google",
         stars: 5,
@@ -167,7 +167,7 @@ export const testimonials: Testimonial[] = [
         stars: 5,
     },
     {
-        quote: "Our placement cell adopted InterviewIQ for 200+ students. The improvement in offer metrics was measurable.",
+        quote: "Our placement cell adopted AceTheInterview for 200+ students. The improvement in offer metrics was measurable.",
         name: "Prof. Rajesh Kumar",
         role: "Placement Head, IIT Roorkee",
         stars: 5,

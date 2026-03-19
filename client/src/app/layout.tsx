@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "InterviewIQ — AI-Powered Mock Interview Platform",
+  title: "AceTheInterview — AI-Powered Mock Interview Platform",
   description: "Ace your next interview with autonomous AI-powered mock interviews tailored to your resume, target role, and experience level.",
   keywords: ["AI interview", "mock interview", "interview prep", "career"],
 };
