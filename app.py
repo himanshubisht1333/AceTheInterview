@@ -1,16 +1,103 @@
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, g
 import google.generativeai as genai
 import json
 import os
 import dotenv
 import requests
+import sqlite3
+import jwt
+import datetime
+import uuid
+from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
 
 dotenv.load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = "super-secret-key"
+app.config['JWT_SECRET'] = os.getenv('JWT_SECRET', 'super-secret-jwt-key')
 CORS(app)
+
+# --- database ---
+DATABASE = 'ace_the_interview.db'
+
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
+    return db
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+def init_db():
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS posts (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS replies (
+                id TEXT PRIMARY KEY,
+                post_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (post_id) REFERENCES posts (id),
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+        db.commit()
+
+init_db()
+
+# ----Auth Middleware----
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+            
+        if not token:
+            return jsonify({"message": "Token is missing"}), 401
+            
+        try:
+            data = jwt.decode(token, app.config['JWT_SECRET'], algorithms=["HS256"])
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute("SELECT * FROM users WHERE id = ?", (data['user_id'],))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return jsonify({"message": "User not found"}), 401
+        except jwt.ExpiredSignatureError:
+            return jsonify({"message": "Token has expired"}), 401
+        except Exception as e:
+            return jsonify({"message": "Token is invalid"}), 401
+            
+        return f(current_user, *args, **kwargs)
+    return decorated
 
 # ── Gemini SDK (for interview simulation) ────────────────────────────────────
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -114,6 +201,194 @@ Return ONLY valid JSON, no markdown:
             "interview_complete": False
         }
 
+
+# a uthentication
+
+@app.route("/register", methods=["POST"])
+def register():
+    try:
+        data = request.get_json(silent=True) or {}
+        name = data.get("name")
+        email = data.get("email")
+        password = data.get("password")
+        
+        if not name or not email or not password:
+            return jsonify({"message": "Missing required fields"}), 400
+            
+        db = get_db()
+        cursor = db.cursor()
+        
+        # if user exists
+        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+        if cursor.fetchone():
+            return jsonify({"message": "User already exists"}), 400
+            
+        user_id = str(uuid.uuid4())
+        hashed_pw = generate_password_hash(password)
+        
+        cursor.execute("INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)",
+                      (user_id, name, email, hashed_pw))
+        db.commit()
+            
+        # Gen token
+        token = jwt.encode({
+            'user_id': user_id,
+            'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)
+        }, app.config['JWT_SECRET'], algorithm="HS256")
+        
+        return jsonify({
+            "message": "User registered successfully",
+            "user": {
+                "_id": user_id,
+                "name": name,
+                "email": email
+            },
+            "token": token
+        }), 201
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"message": f"Server Error: {str(e)}"}), 500
+
+@app.route("/login", methods=["POST"])
+def login():
+    try:
+        data = request.get_json(silent=True) or {}
+        email = data.get("email")
+        password = data.get("password")
+        
+        if not email or not password:
+            return jsonify({"message": "Missing credentials"}), 400
+            
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+        user = cursor.fetchone()
+        
+        if not user or not check_password_hash(user['password_hash'], password):
+            return jsonify({"message": "Invalid credentials"}), 400
+            
+        # Gen token
+        token = jwt.encode({
+            'user_id': user['id'],
+            'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)
+        }, app.config['JWT_SECRET'], algorithm="HS256")
+        
+        return jsonify({
+            "message": "Login successful",
+            "user": {
+                "_id": user['id'],
+                "name": user['name'],
+                "email": user['email']
+            },
+            "token": token
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"message": f"Server Error: {str(e)}"}), 500
+
+@app.route("/user", methods=["GET"])
+@token_required
+def get_user(current_user):
+    return jsonify({
+        "user": {
+            "_id": current_user['id'],
+            "name": current_user['name'],
+            "email": current_user['email']
+        }
+    }), 200
+
+@app.route("/posts", methods=["GET"])
+def get_posts():
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        
+        cursor.execute("""
+            SELECT p.id, p.content, p.created_at, u.name as author
+            FROM posts p
+            JOIN users u ON p.user_id = u.id
+            ORDER BY p.created_at DESC
+        """)
+        posts = [dict(row) for row in cursor.fetchall()]
+        
+        cursor.execute("""
+            SELECT r.id, r.post_id, r.content, r.created_at, u.name as author
+            FROM replies r
+            JOIN users u ON r.user_id = u.id
+            ORDER BY r.created_at ASC
+        """)
+        replies = [dict(row) for row in cursor.fetchall()]
+        
+        replies_by_post = {}
+        for r in replies:
+            post_id = r['post_id']
+            if post_id not in replies_by_post:
+                replies_by_post[post_id] = []
+            replies_by_post[post_id].append(r)
+            
+        for post in posts:
+            post['replies'] = replies_by_post.get(post['id'], [])
+            
+        return jsonify({"posts": posts}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"message": f"Server Error: {str(e)}"}), 500
+
+@app.route("/posts", methods=["POST"])
+@token_required
+def create_post(current_user):
+    try:
+        data = request.get_json(silent=True) or {}
+        content = data.get("content")
+        
+        if not content:
+            return jsonify({"message": "Content is required"}), 400
+            
+        post_id = str(uuid.uuid4())
+        db = get_db()
+        cursor = db.cursor()
+        
+        cursor.execute("INSERT INTO posts (id, user_id, content) VALUES (?, ?, ?)",
+                      (post_id, current_user['id'], content))
+        db.commit()
+        
+        return jsonify({"message": "Post created successfully"}), 201
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"message": f"Server Error: {str(e)}"}), 500
+
+@app.route("/posts/<post_id>/replies", methods=["POST"])
+@token_required
+def create_reply(current_user, post_id):
+    try:
+        data = request.get_json(silent=True) or {}
+        content = data.get("content")
+        
+        if not content:
+            return jsonify({"message": "Content is required"}), 400
+            
+        db = get_db()
+        cursor = db.cursor()
+        
+        cursor.execute("SELECT id FROM posts WHERE id = ?", (post_id,))
+        if not cursor.fetchone():
+            return jsonify({"message": "Post not found"}), 404
+            
+        reply_id = str(uuid.uuid4())
+        
+        cursor.execute("INSERT INTO replies (id, post_id, user_id, content) VALUES (?, ?, ?, ?)",
+                      (reply_id, post_id, current_user['id'], content))
+        db.commit()
+        
+        return jsonify({"message": "Reply added successfully"}), 201
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"message": f"Server Error: {str(e)}"}), 500
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Frontend

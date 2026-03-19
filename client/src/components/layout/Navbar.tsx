@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -12,11 +13,12 @@ const navLinks = [
     { label: "Features", href: "#features" },
     { label: "For Who", href: "#targets" },
     { label: "Dashboard", href: "/setup" },
+    { label: "Community", href: "/community" },
 ];
 
 export default function Navbar() {
     // ✅ Use isAuthenticated from the store — single source of truth
-    const { isAuthenticated, logout,user,getUser } = useAuthStore();
+    const { isAuthenticated, logout, user, getUser } = useAuthStore();
     const [scrolled, setScrolled] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const router = useRouter();
@@ -45,11 +47,10 @@ export default function Navbar() {
 
     return (
         <nav
-            className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-                scrolled
+            className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled
                     ? "bg-dark border-b-3 border-lime"
                     : "bg-transparent border-b-3 border-transparent"
-            }`}
+                }`}
         >
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-16">

@@ -40,7 +40,7 @@ export interface ProfileState {
     clearError: () => void;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://10.30.57.64";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 export const useProfileStore = create<ProfileState>()(
     persist(

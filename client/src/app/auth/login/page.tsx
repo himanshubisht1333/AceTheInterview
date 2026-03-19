@@ -9,7 +9,7 @@ import BrutalistButton from "@/components/ui/BrutalistButton";
 import GridBackground from "@/components/ui/GridBackground";
 import AuthInput from "@/components/auth/AuthInput";
 import { Mail, Lock, LogIn } from "lucide-react";
-import { useAuthStore } from "@/stores/useAuthStore";
+import { useAuthStore } from "@/lib/auth.store";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -29,7 +29,7 @@ export default function LoginPage() {
     // Redirect if already logged in
     useEffect(() => {
         if (isAuthenticated) {
-            router.push("/setup");
+            router.push("/profile");
         }
     }, [isAuthenticated, router]);
 
@@ -66,7 +66,7 @@ export default function LoginPage() {
 
         try {
             // ✅ Pass object { email, password } matching store signature
-            await login({ email, password });
+            await login(email, password);
             // Redirect handled by useEffect watching isAuthenticated
         } catch (err) {
             // Error is set in the store; no extra handling needed here

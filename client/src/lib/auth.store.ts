@@ -22,7 +22,7 @@ export interface AuthState {
     clearError: () => void;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://10.30.57.64";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 export const useAuthStore = create<AuthState>()(
     persist(
