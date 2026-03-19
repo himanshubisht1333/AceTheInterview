@@ -143,7 +143,7 @@ export default function FeedbackPage() {
                         <Brain className="w-4 h-4 text-dark" />
                     </div>
                     <span className="font-grotesk font-black text-white text-sm">
-                        Interview<span className="text-lime">IQ</span> — FEEDBACK REPORT
+                        AceThe<span className="text-lime">Interview</span> — FEEDBACK REPORT
                     </span>
                 </div>
                 <div className="flex gap-3">

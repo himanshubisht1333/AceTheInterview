@@ -6,28 +6,48 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import SetupCard from "@/components/setup/SetupCard";
 import ResumeUpload from "@/components/setup/ResumeUpload";
-import { Brain, Zap, ChevronDown, CheckCircle2, AlertCircle } from "lucide-react";
+import { Brain, Zap, ChevronDown, AlertCircle, PenLine } from "lucide-react";
 import { roles } from "@/lib/roles";
 
 export default function SetupPage() {
     const [resumeFile, setResumeFile] = useState<File | null>(null);
     const [roleId, setRoleId] = useState("");
+    const [customRole, setCustomRole] = useState("");
     const [loading, setLoading] = useState(false);
     const [loadingStage, setLoadingStage] = useState("");
     const [error, setError] = useState("");
     const router = useRouter();
 
-    const canProceed = resumeFile && roleId;
+    const isCustomRole = roleId === "__custom__";
+    const canProceed = resumeFile && roleId && (!isCustomRole || customRole.trim().length > 0);
 
     const handleSubmit = async () => {
         if (!resumeFile || !roleId) return;
 
         setError("");
 
-        const selectedRole = roles.find(r => r.id === roleId);
-        if (!selectedRole) {
-            setError("Invalid role selected.");
-            return;
+        let finalRoleId: string;
+        let finalPrompt: string;
+
+        if (isCustomRole) {
+            const trimmed = customRole.trim();
+            if (!trimmed) {
+                setError("Please enter a custom role name.");
+                return;
+            }
+            finalRoleId = trimmed;
+            finalPrompt = `Generate tailored interview questions for the role: ${trimmed}. 
+Focus on role-specific technical skills, relevant soft skills, situational judgment, 
+past experience, and motivation. Adapt the difficulty and topics to match what a 
+hiring manager would typically ask for this position.Surely Greet with good morning`;
+        } else {
+            const selectedRole = roles.find(r => r.id === roleId);
+            if (!selectedRole) {
+                setError("Invalid role selected.");
+                return;
+            }
+            finalRoleId = selectedRole.id;
+            finalPrompt = selectedRole.promptTemplate;
         }
 
         try {
@@ -37,8 +57,8 @@ export default function SetupPage() {
             setLoadingStage("Uploading resume & analysing with AI…");
             const formData = new FormData();
             formData.append("file", resumeFile);
-            formData.append("role_id", selectedRole.id);
-            formData.append("prompt", selectedRole.promptTemplate);
+            formData.append("role_id", finalRoleId);
+            formData.append("prompt", finalPrompt);
 
             const response = await fetch("http://127.0.0.1:5000/cv", {
                 method: "POST",
@@ -118,16 +138,58 @@ export default function SetupPage() {
                         <div className="relative">
                             <select
                                 value={roleId}
-                                onChange={(e) => setRoleId(e.target.value)}
+                                onChange={(e) => {
+                                    setRoleId(e.target.value);
+                                    if (e.target.value !== "__custom__") setCustomRole("");
+                                    setError("");
+                                }}
                                 className="w-full bg-dark border-3 border-dark-300 focus:border-lime text-white p-3 pr-10 outline-none"
                             >
                                 <option value="">Select a role...</option>
                                 {roles.map((r) => (
                                     <option key={r.id} value={r.id}>{r.name}</option>
                                 ))}
+                                <option value="__custom__">✏️ Custom Role…</option>
                             </select>
                             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none" />
                         </div>
+
+                        {/* Custom role text input — slides in when "Custom Role" is selected */}
+                        <AnimatePresence>
+                            {isCustomRole && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                                    animate={{ opacity: 1, height: "auto", marginTop: 12 }}
+                                    exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                                    transition={{ duration: 0.22, ease: "easeOut" }}
+                                    className="overflow-hidden"
+                                >
+                                    <label className="text-white/50 text-xs block mb-2">
+                                        Enter Your Role
+                                    </label>
+                                    <div className="relative">
+                                        <PenLine className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-lime/60 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            value={customRole}
+                                            onChange={(e) => {
+                                                setCustomRole(e.target.value);
+                                                setError("");
+                                            }}
+                                            placeholder="e.g. DevOps Engineer, Product Manager, UX Researcher…"
+                                            maxLength={80}
+                                            className="w-full bg-dark border-3 border-lime/40 focus:border-lime text-white placeholder-white/25 p-3 pl-10 pr-16 outline-none font-mono text-sm"
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/25 text-xs pointer-events-none">
+                                            {customRole.length}/80
+                                        </span>
+                                    </div>
+                                    <p className="text-white/30 text-xs mt-1.5">
+                                        Gemini will tailor questions specifically for this role.
+                                    </p>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </SetupCard>
 
                     {/* Error */}

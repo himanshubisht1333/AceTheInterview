@@ -8,7 +8,6 @@ import cloudinary.uploader
 from pdf2image import convert_from_bytes
 import io
 import requests
-from gradio_client import Client, handle_file
 from flask_cors import CORS
 
 dotenv.load_dotenv()
@@ -32,18 +31,13 @@ cloudinary.config(
     api_secret=os.getenv("API_SECRET"),
 )
 
-# ── Gradio OCR model ──────────────────────────────────────────────────────────
-gradio_client = Client("CohereLabs/command-a-vision")
-
 # ── Shared interview store (accessible by all clients — browser + Postman) ───
-# Questions written here by /cv or /upload-questions are picked up by the
-# browser's polling loop automatically, no session cookie mismatch.
 interview_store = {
     "questions_content": "",
-    "questions_for_gemini": "",  # kept for Gemini context, never cleared until interview ends
+    "questions_for_gemini": "",
     "conversation": [],
     "evaluation": None,
-    "active": False  # True only while interview is running
+    "active": False
 }
 
 
@@ -130,6 +124,40 @@ Return ONLY valid JSON, no markdown:
         }
 
 
+def build_question_generation_prompt(role: str, frontend_prompt: str, ocr_result: str, is_custom: bool) -> str:
+    """
+    Build the Gemini prompt for question generation.
+    For custom roles, we add extra emphasis on tailoring questions to the specific role
+    since there is no predefined prompt template to lean on.
+    """
+    custom_note = (
+        f'\nNOTE: "{role}" is a custom/non-standard role provided directly by the user. '
+        "Infer the core responsibilities and required skills from the role title and the candidate's "
+        "resume. Generate questions that are highly specific to this role — avoid generic questions "
+        "that could apply to any job.\n"
+        if is_custom else ""
+    )
+
+    return f"""
+You are an experienced recruiter. Generate interview questions based on the candidate's resume and target role.
+Return only structured questions. No explanation. No markdown. No backticks. Mention applicant name in 1st question only and also greet as per time of the day.
+Return strictly valid JSON in this exact format:
+
+{{
+  "questions": "1. Tell me about yourself.\\n2. What is your greatest strength?\\n3. ..."
+}}
+{custom_note}
+Additional Context:
+{frontend_prompt}
+
+Target Role:
+{role}
+
+Candidate Resume:
+{ocr_result}
+    """
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Frontend
 # ─────────────────────────────────────────────────────────────────────────────
@@ -144,8 +172,8 @@ def home():
 # POST /cv
 # Form-data:
 #   file        → PDF or image of the resume
-#   role_id     → target job role (e.g. "Backend Engineer")
-#   prompt      → any extra context / FAQ hints
+#   role_id     → target job role (preset id OR free-text custom role name)
+#   prompt      → any extra context / FAQ hints (or auto-generated for custom roles)
 #
 # What it does:
 #   1. Uploads CV to Cloudinary
@@ -158,8 +186,8 @@ def home():
 @app.route("/cv", methods=["POST"])
 def cv():
     file = request.files.get("file")
-    role = request.form.get("role_id")
-    frontend_prompt = request.form.get("prompt")
+    role = request.form.get("role_id", "").strip()
+    frontend_prompt = request.form.get("prompt", "").strip()
 
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
@@ -167,6 +195,18 @@ def cv():
         return jsonify({"error": "No role provided"}), 400
     if not frontend_prompt:
         return jsonify({"error": "No prompt provided"}), 400
+
+    # Detect whether this is a custom (free-text) role.
+    # Preset roles use short identifiers like "backend_engineer", "data_scientist", etc.
+    # A custom role will be the full human-readable title typed by the user (e.g. "DevOps Lead").
+    # We identify custom roles by checking if the role string contains spaces or
+    # is not found in the known preset IDs. The frontend also passes a richer prompt
+    # for custom roles, so we simply flag it for the prompt builder.
+    KNOWN_PRESET_IDS = {r.strip() for r in [
+        # Add your actual preset role ids here so the flag is accurate.
+        # Leaving this as an open set means any role not matching a simple slug is treated as custom.
+    ]}
+    is_custom_role = bool(" " in role or role not in KNOWN_PRESET_IDS) if KNOWN_PRESET_IDS else (" " in role)
 
     uploaded_urls = []
 
@@ -193,47 +233,25 @@ def cv():
     except Exception as e:
         return jsonify({"error": f"File upload failed: {str(e)}"}), 500
 
-    # Step 2: OCR the CV via Gradio
+    # Step 2: OCR the CV via Microservice
     try:
-        ocr_result = gradio_client.predict(
-            message={
-                "text": """
-                You are an expert resume parser. Do not include any explanations, Markdown formatting,
-                backticks or /n /u for new line and underline. Return the raw text only in clean and
-                organised way. Extract: Name,district,state, career objective, skills, experience, education,
-                certifications, projects, achievements, and any other information.
-
-                
-
-                """,
-                "files": [handle_file(uploaded_urls[0])],
-            },
-            api_name="/chat",
-        )
+        print("hiitted request 1")
+        file.seek(0)  # Reset file pointer to beginning
+        files = {'file': ('resume.pdf', file.stream, 'application/pdf')}
+        response = requests.post("http://13.48.149.53:8000/extract-text", files=files)
+        
+        if response.status_code != 200:
+            return jsonify({"error": f"OCR microservice failed: {response.text}"}), 500
+        
+        print("hiitted request 2,response received")
+        ocr_result = response.text.strip()
         print("OCR result:", ocr_result)
     except Exception as e:
         return jsonify({"error": f"OCR failed: {str(e)}"}), 500
 
     # Step 3: Generate interview questions via Gemini REST
     try:
-        prompt = f"""
-You are an experienced recruiter. Generate interview questions based on the candidate's resume and target role.
-Return only structured questions. No explanation. No markdown. No backticks.Mention applicant name in every question.
-Return strictly valid JSON in this exact format:
-
-{{
-  "questions": "1. Tell me about yourself.\\n2. What is your greatest strength?\\n3. ..."
-}}
-
-Additional Context:
-{frontend_prompt}
-
-Target Role:
-{role}
-
-Candidate Resume:
-{ocr_result}
-        """
+        prompt = build_question_generation_prompt(role, frontend_prompt, ocr_result, is_custom_role)
         gemini_response = call_gemini_rest(prompt)
         raw_text = gemini_response['candidates'][0]['content']['parts'][0]['text']
 
@@ -247,7 +265,7 @@ Candidate Resume:
 
         # Step 4: Store in interview_store — browser will auto-detect and start
         interview_store["questions_content"] = questions_content
-        interview_store["questions_for_gemini"] = questions_content  # preserved for Gemini
+        interview_store["questions_for_gemini"] = questions_content
 
         question_count = len([l for l in questions_content.splitlines() if l.strip()])
         return jsonify({"status": "ok", "question_count": question_count}), 200
@@ -299,8 +317,6 @@ def start_interview():
     if not questions_content:
         return jsonify({"error": "No questions loaded. Call POST /cv or /upload-questions first."}), 400
 
-    # Clear questions_content so polling returns ready:false — prevents restart
-    # But keep questions_for_gemini so /answer can still use it
     interview_store["questions_content"] = ""
     interview_store["active"] = True
 
@@ -332,12 +348,11 @@ def handle_answer():
                 "reply": "I didn't quite catch that — could you please repeat your answer?"
             })
 
-        # Use questions_for_gemini (never cleared during interview)
         questions_content = interview_store.get("questions_for_gemini", "")
 
-        # Only block if interview is explicitly marked inactive
         if not interview_store.get("active", False):
             return jsonify({"completed": True, "reply": "The interview has already ended. Thank you!"})
+
         log_content = read_file_safe("interview_log.txt")
 
         current_question = session.get("current_question", "")
@@ -345,7 +360,7 @@ def handle_answer():
 
         conversation.append({"question": current_question, "answer": user_answer})
         session["conversation"] = conversation
-        interview_store["conversation"] = conversation  # mirror to store for /evaluate
+        interview_store["conversation"] = conversation
         append_to_log(session.get("question_count", 1), current_question, user_answer)
 
         result = ask_gemini_sdk(conversation, questions_content, log_content)
@@ -355,7 +370,7 @@ def handle_answer():
         next_question = result.get("next_question", "")
 
         if interview_complete or not next_question:
-            interview_store["active"] = False  # mark done so further answers are blocked
+            interview_store["active"] = False
             return jsonify({"completed": True, "reply": interviewer_reply})
 
         session["current_question"] = next_question
@@ -375,21 +390,16 @@ def handle_answer():
 
 # ─────────────────────────────────────────────────────────────────────────────
 # EVALUATE — called by frontend after interview completes
-# Reads the full conversation from session, sends to Gemini for deep evaluation
-# Returns structured feedback that maps directly to FeedbackPage variables
 # ─────────────────────────────────────────────────────────────────────────────
 @app.route("/evaluate", methods=["POST"])
 def evaluate():
     try:
-        # Read from interview_store so it works regardless of session cookie
         conversation = interview_store.get("conversation", [])
         if not conversation:
-            # Fallback to session
             conversation = session.get("conversation", [])
         if not conversation:
             return jsonify({"error": "No conversation found to evaluate."}), 400
 
-        # Build full transcript string for Gemini
         transcript_text = ""
         for i, turn in enumerate(conversation, 1):
             transcript_text += f"Q{i}: {turn['question']}\nA{i}: {turn['answer']}\n\n"
@@ -453,7 +463,6 @@ Rules:
         evaluation = json.loads(raw)
         print("Evaluation result:", evaluation)
 
-        # Store evaluation so frontend can fetch it at /feedback-data
         interview_store["evaluation"] = evaluation
         interview_store["active"] = False
         interview_store["questions_for_gemini"] = ""
@@ -476,6 +485,8 @@ def feedback_data():
     if not evaluation:
         return jsonify({"ready": False})
     return jsonify({"ready": True, "evaluation": evaluation})
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TEST ONLY — seed fake conversation and call evaluate in one request
 # GET http://127.0.0.1:5000/test-evaluate
@@ -483,14 +494,12 @@ def feedback_data():
 # ─────────────────────────────────────────────────────────────────────────────
 @app.route("/test-evaluate", methods=["GET"])
 def test_evaluate():
-    # Inject fake conversation directly into store
     interview_store["conversation"] = [
         {"question": "Tell me about yourself.", "answer": "I am a frontend developer with 2 years of React experience. I have built several e-commerce projects."},
         {"question": "What is your greatest strength?", "answer": "My greatest strength is problem solving. I enjoy breaking down complex problems into smaller pieces."},
         {"question": "Why do you want this role?", "answer": "I want to grow as an engineer and this role offers great challenges with modern tech stack."},
     ]
     return jsonify({"status": "ok", "message": "Fake conversation seeded. Now POST /evaluate to test."})
-
 
 
 if __name__ == "__main__":
